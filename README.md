@@ -50,25 +50,74 @@ Coste: unas 30 peticiones pequeñas a TMDB por película nueva (en paralelo, ~1 
 - Las fuentes se consultan en paralelo con un timeout de 10 s cada una. Si dos usuarios piden la misma película a la vez, solo se scrapea una vez.
 - Cooldown de 8 s por usuario.
 
-## Instalación en el VPS (Debian/Ubuntu)
+## Requisitos
+
+- **Python 3.10+** y **FFmpeg** (solo para la voz).
+- Un bot de Discord: [Developer Portal](https://discord.com/developers/applications) → *New Application* → **Bot** → *Reset Token*. No necesita ningún *privileged intent*.
+- Una API key de [TMDB](https://www.themoviedb.org/settings/api) (gratis).
+- Opcional: una API key de [OMDb](https://www.omdbapi.com/apikey.aspx) para las notas de IMDb (gratis, 1.000 consultas/día).
+
+**Invitar el bot:** Developer Portal → OAuth2 → URL Generator → scopes `bot` y `applications.commands`; permisos `Send Messages`, `Embed Links`, `Connect` y `Speak`.
+
+## Probarlo en local
 
 ```bash
-sudo useradd -r -s /usr/sbin/nologin sinopsis
-sudo mkdir -p /opt/sinopsis-bot && sudo cp *.py requirements.txt .env.example sinopsis-bot.service /opt/sinopsis-bot/
-cd /opt/sinopsis-bot
-sudo apt install -y ffmpeg python3-venv   # no reinicia otros servicios
-sudo python3 -m venv .venv && sudo .venv/bin/pip install -r requirements.txt
-sudo cp .env.example .env && sudo nano .env      # rellena DISCORD_TOKEN y TMDB_API_KEY
-sudo chown -R sinopsis: /opt/sinopsis-bot && sudo chmod 600 .env
-sudo cp sinopsis-bot.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now sinopsis-bot
-journalctl -u sinopsis-bot -f
+git clone https://github.com/Seb-RS/discord-bot-sinopsis.git
+cd discord-bot-sinopsis
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt     # Windows: .venv\Scripts\pip
+cp .env.example .env                          # y rellena las claves
+.venv/bin/python bot.py                       # Windows: .venv\Scripts\python bot.py
 ```
 
-**Invitar el bot:** en el Developer Portal → OAuth2 → URL Generator, marca los scopes `bot` y `applications.commands`, y los permisos `Send Messages`, `Embed Links`, `Connect` y `Speak`. No hace falta ningún *privileged intent*.
+Pon `DEV_GUILD_ID` con el ID de tu servidor para que el comando aparezca al instante.
+
+## Instalación en un servidor (Debian/Ubuntu)
+
+El código queda a nombre de tu usuario (para actualizar con `git pull` sin `sudo`) y el bot corre como un usuario de sistema sin privilegios ni login. No abre puertos y tiene límites de memoria y CPU, así que puede convivir con otros servicios.
+
+```bash
+sudo apt install -y git ffmpeg python3-venv
+sudo useradd -r -s /usr/sbin/nologin sinopsis
+sudo mkdir /opt/sinopsis-bot && sudo chown "$USER": /opt/sinopsis-bot
+git clone https://github.com/Seb-RS/discord-bot-sinopsis.git /opt/sinopsis-bot
+cd /opt/sinopsis-bot
+python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt
+cp .env.example .env && vi .env                # rellena las claves; FFMPEG_PATH vacío
+sudo chown "$USER":sinopsis .env && chmod 640 .env
+sudo cp sinopsis-bot.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now sinopsis-bot
+```
+
+Comprobar que funciona (debe salir `connected to Gateway`):
+
+```bash
+sudo journalctl -u sinopsis-bot -n 20 --no-pager
+```
+
+Actualizar:
+
+```bash
+git -C /opt/sinopsis-bot pull && sudo systemctl restart sinopsis-bot
+```
+
+Si cambia `requirements.txt`, antes: `/opt/sinopsis-bot/.venv/bin/pip install -q -r /opt/sinopsis-bot/requirements.txt`.
 
 ## Límites conocidos
 
 - El scraping se rompe si las webs cambian su HTML. Cada fuente falla por separado y el resto sigue funcionando; revisa `journalctl` si una deja de aparecer.
 - Desde IPs de datacenter, Cloudflare puede bloquear Letterboxd o Rotten Tomatoes igual que hace con FilmAffinity. Compruébalo con `LOG_LEVEL=INFO`: verás `HTTP 403` en el log.
 - Metacritic no tiene una búsqueda en HTML estático, así que se prueba el *slug* del título en inglés (y `slug-año`). Si falla y hay `OMDB_API_KEY`, se usa el Metascore de OMDb.
+
+## Aviso legal
+
+Proyecto personal y educativo, sin ánimo de lucro.
+
+- **No está afiliado, patrocinado ni respaldado** por Rotten Tomatoes, Metacritic, Letterboxd, IMDb, FilmAffinity, TMDB, OMDb, Microsoft ni Discord. Todas las marcas pertenecen a sus dueños.
+- **Scraping:** el bot lee páginas públicas de Rotten Tomatoes, Metacritic y Letterboxd. Sus condiciones de uso pueden prohibir el acceso automatizado. Revisa esas condiciones antes de usarlo; **cada persona es responsable de cómo lo usa**. El bot hace pocas peticiones, guarda los resultados 12 h y no intenta saltarse protecciones anti-bots (por eso FilmAffinity va desactivado).
+- **TMDB:** este producto usa la API de TMDB, pero TMDB no lo respalda ni lo certifica.
+- **Voz:** `edge-tts` usa un servicio no oficial de Microsoft que puede dejar de funcionar en cualquier momento.
+
+## Licencia
+
+[MIT](LICENSE) © 2026 Sebdev
