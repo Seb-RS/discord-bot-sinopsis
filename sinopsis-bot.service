@@ -14,7 +14,8 @@ RestartSec=10
 # Convivencia con otros servicios del VPS:
 # techo de memoria (si se dispara, systemd lo mata y reinicia en vez de ahogar el VPS),
 # máximo medio núcleo de CPU y prioridad baja de CPU y disco (cede ante el resto).
-MemoryMax=200M   # incluye FFmpeg mientras lee en voz
+# (los 200M incluyen FFmpeg mientras lee en voz)
+MemoryMax=200M
 CPUQuota=50%
 Nice=10
 IOSchedulingClass=idle
