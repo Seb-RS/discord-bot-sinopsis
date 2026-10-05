@@ -1,6 +1,6 @@
 # Bot de sinopsis y valoraciones
 
-`/pelicula titulo:<nombre>` devuelve la sinopsis en español, la portada, los títulos (LAT / España / inglés / original), una **valoración media** a partir de varias webs de crítica y de público, y **hasta 3 películas parecidas**. Cada una tiene un botón que abre un formulario con el título y «leer en voz» ya rellenos, para ajustarlos antes de enviar.
+`/pelicula` sin nada abre un formulario de búsqueda (título + «leer en voz»). `/pelicula titulo:<nombre>` busca directamente, con autocompletado, y devuelve la sinopsis en español, la portada, los títulos (LAT / España / inglés / original), una **valoración media** a partir de varias webs de crítica y de público, y **hasta 3 películas parecidas**. Cada una tiene un botón que abre un formulario con el título y «leer en voz» ya rellenos, para ajustarlos antes de enviar.
 
 **Un solo canal:** con `ALLOWED_CHANNEL_IDS` (separados por comas) el bot solo responde ahí; en otros canales avisa, solo a quien lo usó, de dónde usarlo. Para que el comando ni aparezca en otros canales: Ajustes del servidor → Integraciones → el bot → Canales.
 

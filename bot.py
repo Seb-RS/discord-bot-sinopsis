@@ -169,17 +169,21 @@ def build_embed(res: Result) -> discord.Embed:
 
 
 class MovieModal(discord.ui.Modal):
-    """Formulario que abre un botón de recomendada: título y «leer en voz»
-    ya rellenos, para ajustarlos antes de enviar (Discord no deja a un bot
-    escribir un comando en la barra de mensajes del usuario)."""
+    """Formulario de búsqueda: lo abre `/pelicula` sin título (vacío) y los
+    botones de recomendadas (con título y «leer en voz» ya rellenos, para
+    ajustarlos antes de enviar; Discord no deja a un bot escribir un comando
+    en la barra de mensajes del usuario)."""
 
-    def __init__(self, movie_id: int, label: str, read: bool):
-        super().__init__(title=f"🎬 {label}"[:45], timeout=600)
+    def __init__(self, movie_id: int | None = None, label: str = "", read: bool = True):
+        super().__init__(title=f"🎬 {label}"[:45] if label else "🎬 Buscar película", timeout=600)
         self.movie_id, self.label = movie_id, label
-        self.titulo = discord.ui.TextInput(default=label, max_length=100)
+        self.titulo = discord.ui.TextInput(
+            default=label or None, max_length=100,
+            placeholder="Ej.: El origen, Origen 2010, Inception")
         self.leer = discord.ui.Checkbox(default=read)
         self.add_item(discord.ui.Label(
-            text="Título", description="Puedes cambiarlo o añadir el año", component=self.titulo))
+            text="Título", description="En español (LAT o España) o inglés. Puedes añadir el año",
+            component=self.titulo))
         self.add_item(discord.ui.Label(
             text="Leer en voz", description="Si estás en un canal de voz, el bot entra a leer",
             component=self.leer))
@@ -189,7 +193,7 @@ class MovieModal(discord.ui.Modal):
             return
         titulo = self.titulo.value.strip()
         # Sin cambios → se usa el ID exacto; si lo editó, se busca lo que escribió.
-        query = f"tmdb:{self.movie_id}" if titulo == self.label else titulo
+        query = f"tmdb:{self.movie_id}" if self.movie_id and titulo == self.label else titulo
         await send_movie(inter, query, self.leer.value)
 
 
@@ -210,7 +214,8 @@ class RecButton(discord.ui.DynamicItem[discord.ui.Button], template=r"peli:(?P<i
 
     async def callback(self, inter: discord.Interaction):
         # Abre el formulario; el cooldown se comprueba al enviarlo, no al abrirlo.
-        await inter.response.send_modal(MovieModal(self.movie_id, self.item.label or "", self.read))
+        if not await blocked(inter, cooldown=False):
+            await inter.response.send_modal(MovieModal(self.movie_id, self.item.label or "", self.read))
 
 
 def recs_view(res: Result, read: bool) -> discord.ui.View | None:
@@ -273,8 +278,9 @@ def allowed_channels() -> set[int]:
     return {int(x) for x in os.getenv("ALLOWED_CHANNEL_IDS", "").replace(" ", "").split(",") if x}
 
 
-async def blocked(inter: discord.Interaction) -> bool:
-    """Responde (solo a quien lo usó) y devuelve True si no se puede usar aquí o ahora."""
+async def blocked(inter: discord.Interaction, cooldown: bool = True) -> bool:
+    """Responde (solo a quien lo usó) y devuelve True si no se puede usar aquí o
+    ahora. `cooldown=False` al abrir un formulario: la espera cuenta al enviarlo."""
     if allowed := allowed_channels():
         # Los hilos dentro del canal permitido también valen.
         here = {inter.channel_id, getattr(inter.channel, "parent_id", None)}
@@ -282,7 +288,7 @@ async def blocked(inter: discord.Interaction) -> bool:
             where = " o ".join(f"<#{c}>" for c in allowed)
             await inter.response.send_message(f"🎬 Úsalo en {where}.", ephemeral=True)
             return True
-    if retry := cooldown_left(inter.user.id):
+    if cooldown and (retry := cooldown_left(inter.user.id)):
         await inter.response.send_message(f"⏳ Espera {retry:.0f} s antes de volver a usarlo.",
                                           ephemeral=True)
         return True
@@ -308,11 +314,16 @@ def cooldown_left(user_id: int) -> float:
 
 @bot.tree.command(name="pelicula", description="Sinopsis, portada y valoración media de una película")
 @app_commands.describe(
-    titulo="Título en español (LAT o España) o inglés. Puedes añadir el año: «Origen 2010»",
+    titulo="Título (LAT, España o inglés; puedes añadir el año). Déjalo vacío para abrir el formulario",
     leer="Si estás en un canal de voz, el bot entra y lee título y sinopsis (por defecto: sí)",
 )
-async def pelicula(inter: discord.Interaction, titulo: app_commands.Range[str, 1, 100],
+async def pelicula(inter: discord.Interaction, titulo: app_commands.Range[str, 1, 100] | None = None,
                    leer: bool = True):
+    if not titulo:
+        # Sin título → formulario (el canal se comprueba ya; la espera, al enviarlo).
+        if not await blocked(inter, cooldown=False):
+            await inter.response.send_modal(MovieModal(read=leer))
+        return
     if await blocked(inter):
         return
     await send_movie(inter, titulo, leer)
