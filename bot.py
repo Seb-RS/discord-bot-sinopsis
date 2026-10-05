@@ -148,7 +148,7 @@ def build_embed(res: Result) -> discord.Embed:
                 + f" · ⭐ {r['vote']:.1f}"
                 + (f"\n-# En común: {', '.join(r['themes'])}" if r.get("themes") else "")
                 for r in m.recommendations]
-        e.add_field(name="🎯 Si te gustó, prueba con", value="\n".join(recs), inline=False)
+        e.add_field(name="Peliculas parecidas:", value="\n".join(recs), inline=False)
 
     e.set_footer(text="Notas normalizadas a 0–100 · Crítica y público pesan 50/50 · "
                       "Datos y portada: TMDB")
