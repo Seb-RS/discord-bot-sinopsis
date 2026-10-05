@@ -44,6 +44,7 @@ Coste: unas 30 peticiones pequeñas a TMDB por película nueva (en paralelo, ~1 
 - Dependencias: `discord.py[voice]` (incluye `aiohttp`) y `edge-tts`, más FFmpeg en el sistema para la voz. Sin BeautifulSoup, sin Selenium ni Playwright: todo son regex sobre el HTML.
 - Solo el intent `guilds` y sin caché de miembros ni mensajes: el bot solo atiende slash commands.
 - Caché en memoria acotada: 200 fichas (12 h) y 500 búsquedas (30 min). Sin base de datos.
+- `DEV_GUILD_ID` registra el comando solo en ese servidor (cambios al instante) y borra la versión global para no duplicarlo. Para un bot de un solo servidor, déjalo puesto también en el VPS.
 - Las fuentes se consultan en paralelo con un timeout de 10 s cada una. Si dos usuarios piden la misma película a la vez, solo se scrapea una vez.
 - Cooldown de 8 s por usuario.
 

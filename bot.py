@@ -68,6 +68,9 @@ class Bot(discord.Client):
             guild = discord.Object(int(gid))
             self.tree.copy_global_to(guild=guild)
             await self.tree.sync(guild=guild)
+            # Y borra la versión global, si la hubo, para no tener /pelicula duplicado.
+            self.tree.clear_commands(guild=None)
+            await self.tree.sync()
         else:
             await self.tree.sync()  # global: puede tardar hasta 1 h en aparecer
 
@@ -138,7 +141,8 @@ def build_embed(res: Result) -> discord.Embed:
             parts.append(f"Público **{res.audience:.0f}**")
         e.add_field(
             name="⭐ Valoración global",
-            value=f"# {res.overall:.0f}/100\n{bar(res.overall)}\n" + " · ".join(parts),
+            # Los títulos «#» no funcionan dentro de campos de embed: solo negrita.
+            value=f"**{res.overall:.0f}**/100  {bar(res.overall)}\n" + " · ".join(parts),
             inline=False,
         )
 
