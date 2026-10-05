@@ -164,18 +164,20 @@ def build_embed(res: Result) -> discord.Embed:
     return e
 
 
-class RecButton(discord.ui.DynamicItem[discord.ui.Button], template=r"peli:(?P<id>\d+)"):
-    """Botón de película recomendada. Es «dinámico»: el ID va en el custom_id,
-    así que sigue funcionando tras reiniciar el bot y no ocupa memoria."""
+class RecButton(discord.ui.DynamicItem[discord.ui.Button], template=r"peli:(?P<id>\d+)(?::(?P<read>[01]))?"):
+    """Botón de película recomendada. Es «dinámico»: el ID y si leer en voz van
+    en el custom_id, así que sigue funcionando tras reiniciar el bot y no ocupa memoria."""
 
-    def __init__(self, movie_id: int, label: str = "Ver"):
+    def __init__(self, movie_id: int, read: bool = True, label: str = "Ver"):
         super().__init__(discord.ui.Button(
-            label=label, emoji="🎬", style=discord.ButtonStyle.secondary, custom_id=f"peli:{movie_id}"))
-        self.movie_id = movie_id
+            label=label, emoji="🎬", style=discord.ButtonStyle.secondary,
+            custom_id=f"peli:{movie_id}:{int(read)}"))
+        self.movie_id, self.read = movie_id, read
 
     @classmethod
     async def from_custom_id(cls, inter, item, match):
-        return cls(int(match["id"]))
+        # Los botones antiguos no llevan «:0/1» → se leen (comportamiento anterior).
+        return cls(int(match["id"]), match["read"] != "0")
 
     async def callback(self, inter: discord.Interaction):
         # Mismo cooldown que el comando, para que los botones no sirvan para saltárselo.
@@ -183,20 +185,20 @@ class RecButton(discord.ui.DynamicItem[discord.ui.Button], template=r"peli:(?P<i
             await inter.response.send_message(f"⏳ Espera {retry:.0f} s antes de volver a usarlo.",
                                               ephemeral=True)
             return
-        await send_movie(inter, f"tmdb:{self.movie_id}")
+        await send_movie(inter, f"tmdb:{self.movie_id}", self.read)
 
 
-def recs_view(res: Result) -> discord.ui.View | None:
+def recs_view(res: Result, read: bool) -> discord.ui.View | None:
     if not res.movie.recommendations:
         return None
     view = discord.ui.View(timeout=1)  # sin estado: los clics los atiende RecButton
     for r in res.movie.recommendations:
         label = f"{r['title']} ({r['year']})" if r["year"] else r["title"]
-        view.add_item(RecButton(r["id"], label[:80]))
+        view.add_item(RecButton(r["id"], read, label[:80]))
     return view
 
 
-async def send_movie(inter: discord.Interaction, query: str):
+async def send_movie(inter: discord.Interaction, query: str, read: bool = True):
     await inter.response.defer(thinking=True)
     try:
         res = await bot.service.lookup(query)
@@ -208,10 +210,11 @@ async def send_movie(inter: discord.Interaction, query: str):
         await inter.followup.send(f"🔍 No encontré ninguna película para **{query}**.")
         return
     kwargs = {"embed": build_embed(res)}
-    if view := recs_view(res):
+    if view := recs_view(res, read):
         kwargs["view"] = view
     await inter.followup.send(**kwargs)
-    narrate(inter, res)
+    if read:
+        narrate(inter, res)
 
 
 def narrate(inter: discord.Interaction, res: Result) -> None:
@@ -257,13 +260,17 @@ def cooldown_left(user_id: int) -> float:
 
 
 @bot.tree.command(name="pelicula", description="Sinopsis, portada y valoración media de una película")
-@app_commands.describe(titulo="Título en español (LAT o España) o inglés. Puedes añadir el año: «Origen 2010»")
-async def pelicula(inter: discord.Interaction, titulo: app_commands.Range[str, 1, 100]):
+@app_commands.describe(
+    titulo="Título en español (LAT o España) o inglés. Puedes añadir el año: «Origen 2010»",
+    leer="Si estás en un canal de voz, el bot entra y lee título y sinopsis (por defecto: sí)",
+)
+async def pelicula(inter: discord.Interaction, titulo: app_commands.Range[str, 1, 100],
+                   leer: bool = True):
     if retry := cooldown_left(inter.user.id):
         await inter.response.send_message(f"⏳ Espera {retry:.0f} s antes de volver a usarlo.",
                                           ephemeral=True)
         return
-    await send_movie(inter, titulo)
+    await send_movie(inter, titulo, leer)
 
 
 @pelicula.autocomplete("titulo")
