@@ -40,6 +40,9 @@ class Bot(discord.Client):
             member_cache_flags=discord.MemberCacheFlags.none(),
             max_messages=None,
             chunk_guilds_at_startup=False,
+            # El bot repite texto del usuario («No encontré … para X»): que nunca
+            # haga menciones (@everyone, roles, usuarios) en su nombre.
+            allowed_mentions=discord.AllowedMentions.none(),
         )
         self.tree = app_commands.CommandTree(self)
         self.http_session: aiohttp.ClientSession | None = None
@@ -237,7 +240,8 @@ async def send_movie(inter: discord.Interaction, query: str, read: bool = True):
         await inter.followup.send("⚠️ Error consultando los datos. Prueba de nuevo en un rato.")
         return
     if not res:
-        await inter.followup.send(f"🔍 No encontré ninguna película para **{query}**.")
+        safe = discord.utils.escape_markdown(discord.utils.escape_mentions(query))
+        await inter.followup.send(f"🔍 No encontré ninguna película para **{safe}**.")
         return
     kwargs = {"embed": build_embed(res)}
     if view := recs_view(res, read):

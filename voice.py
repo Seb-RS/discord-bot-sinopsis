@@ -20,6 +20,7 @@ log = logging.getLogger("voice")
 
 MAX_CHARS = 700       # sinopsis muy largas se cortan en la última frase completa
 PLAY_TIMEOUT = 120    # s; red de seguridad por si la reproducción se cuelga
+MAX_QUEUE = 3         # lecturas en cola por servidor; más se descartan (evita monopolizar la voz)
 
 
 def narration_text(title: str, year: int | None, overview: str) -> str:
@@ -55,8 +56,17 @@ class Narrator:
 
     async def speak(self, channel: discord.VoiceChannel | discord.StageChannel, text: str) -> None:
         guild = channel.guild
-        audio = await self.tts(text)          # antes de entrar: nada de silencios incómodos
+        if self.pending.get(guild.id, 0) >= MAX_QUEUE:
+            log.info("Cola de voz llena en %s: se omite la lectura", guild.id)
+            return
         self.pending[guild.id] += 1
+        try:
+            audio = await self.tts(text)      # antes de entrar: nada de silencios incómodos
+        except BaseException:
+            self.pending[guild.id] -= 1
+            if not self.pending[guild.id]:
+                del self.pending[guild.id]
+            raise
         try:
             # Cola por servidor: si dos personas piden a la vez, se leen por turnos.
             async with self.locks[guild.id]:

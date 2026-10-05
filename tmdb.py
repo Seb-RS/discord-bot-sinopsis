@@ -45,6 +45,10 @@ class Movie:
         return {t for t in (self.original_title, self.title_lat, self.title_es, self.title_en) if t}
 
 
+class TMDBError(Exception):
+    """Error de TMDB sin datos sensibles (ni URL con la clave ni cabeceras)."""
+
+
 class TMDB:
     def __init__(self, http: aiohttp.ClientSession, key: str):
         self.http = http
@@ -56,7 +60,10 @@ class TMDB:
 
     async def _get(self, path: str, **params) -> dict:
         async with self.http.get(API + path, params={**self.auth, **params}, headers=self.headers) as r:
-            r.raise_for_status()
+            if r.status != 200:
+                # No se usa raise_for_status(): su excepción incluye la URL (con la
+                # api_key) y las cabeceras (con el token), y acabaría en los logs.
+                raise TMDBError(f"TMDB respondió HTTP {r.status} en {path}")
             return await r.json()
 
     async def search(self, query: str, year: int | None = None) -> list[dict]:

@@ -241,10 +241,14 @@ async def omdb(http, movie: Movie, key: str) -> list[Rating]:
     el Metascore como respaldo si el scraping de Metacritic falla."""
     if not key or not movie.imdb_id:
         return []
-    async with http.get("https://www.omdbapi.com/", params={"i": movie.imdb_id, "apikey": key}) as r:
-        if r.status != 200:
-            return []
-        d = await r.json(content_type=None)
+    try:
+        async with http.get("https://www.omdbapi.com/", params={"i": movie.imdb_id, "apikey": key}) as r:
+            if r.status != 200:
+                return []
+            d = await r.json(content_type=None)
+    except aiohttp.ClientResponseError as e:
+        # Su repr incluye la URL con la apikey: se relanza sin ella.
+        raise RuntimeError(f"OMDb falló: HTTP {e.status}") from None
     if d.get("Response") != "True":
         return []
     out = []
