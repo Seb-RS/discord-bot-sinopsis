@@ -2,6 +2,8 @@
 
 `/pelicula titulo:<nombre>` devuelve la sinopsis en español, la portada, los títulos (LAT / España / inglés / original), una **valoración media** a partir de varias webs de crítica y de público, y **hasta 3 películas parecidas**. Cada una tiene un botón que abre un formulario con el título y «leer en voz» ya rellenos, para ajustarlos antes de enviar.
 
+**Un solo canal:** con `ALLOWED_CHANNEL_IDS` (separados por comas) el bot solo responde ahí; en otros canales avisa, solo a quien lo usó, de dónde usarlo. Para que el comando ni aparezca en otros canales: Ajustes del servidor → Integraciones → el bot → Canales.
+
 **Voz:** si quien usa el comando está en un canal de voz, el bot entra, lee el título y la sinopsis (voz neuronal en español latino vía `edge-tts`) y se va. Si varias personas piden a la vez, las lee por turnos. Para pedir una película sin que entre a leer, usa la opción `leer: False` (los botones de recomendadas heredan esa elección). Se desactiva del todo con `ENABLE_VOICE=0`.
 
 Acepta títulos en español latino («El origen»), de España («Origen») o en inglés («Inception»). El autocompletado muestra las coincidencias con su año para desambiguar remakes. También puedes escribir el año: `Origen 2010`.

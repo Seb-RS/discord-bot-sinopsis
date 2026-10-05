@@ -185,9 +185,7 @@ class MovieModal(discord.ui.Modal):
             component=self.leer))
 
     async def on_submit(self, inter: discord.Interaction):
-        if retry := cooldown_left(inter.user.id):
-            await inter.response.send_message(f"⏳ Espera {retry:.0f} s antes de volver a usarlo.",
-                                              ephemeral=True)
+        if await blocked(inter):
             return
         titulo = self.titulo.value.strip()
         # Sin cambios → se usa el ID exacto; si lo editó, se busca lo que escribió.
@@ -269,6 +267,28 @@ _voice_tasks: set[asyncio.Task] = set()
 
 # ───────────────────────── comandos ─────────────────────────
 
+def allowed_channels() -> set[int]:
+    """Canales donde se puede usar el bot (vacío = todos), de ALLOWED_CHANNEL_IDS.
+    Se lee al usarse, no al importar, porque el .env se carga en main()."""
+    return {int(x) for x in os.getenv("ALLOWED_CHANNEL_IDS", "").replace(" ", "").split(",") if x}
+
+
+async def blocked(inter: discord.Interaction) -> bool:
+    """Responde (solo a quien lo usó) y devuelve True si no se puede usar aquí o ahora."""
+    if allowed := allowed_channels():
+        # Los hilos dentro del canal permitido también valen.
+        here = {inter.channel_id, getattr(inter.channel, "parent_id", None)}
+        if not here & allowed:
+            where = " o ".join(f"<#{c}>" for c in allowed)
+            await inter.response.send_message(f"🎬 Úsalo en {where}.", ephemeral=True)
+            return True
+    if retry := cooldown_left(inter.user.id):
+        await inter.response.send_message(f"⏳ Espera {retry:.0f} s antes de volver a usarlo.",
+                                          ephemeral=True)
+        return True
+    return False
+
+
 COOLDOWN = 8.0
 _last_use: dict[int, float] = {}
 
@@ -293,9 +313,7 @@ def cooldown_left(user_id: int) -> float:
 )
 async def pelicula(inter: discord.Interaction, titulo: app_commands.Range[str, 1, 100],
                    leer: bool = True):
-    if retry := cooldown_left(inter.user.id):
-        await inter.response.send_message(f"⏳ Espera {retry:.0f} s antes de volver a usarlo.",
-                                          ephemeral=True)
+    if await blocked(inter):
         return
     await send_movie(inter, titulo, leer)
 
