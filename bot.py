@@ -32,10 +32,11 @@ def load_env(path: Path = Path(__file__).with_name(".env")) -> None:
 
 class Bot(discord.Client):
     def __init__(self):
-        # Solo el intent `guilds` (lo exige discord.py para funcionar bien):
-        # el bot responde a slash commands, no necesita miembros, mensajes ni presencias.
+        # Intents mínimos: `guilds` (lo exige discord.py) y `voice_states` (para saber
+        # si quien usa el comando está en un canal de voz). Ni miembros, ni mensajes,
+        # ni presencias: los estados de voz se guardan aparte de la caché de miembros.
         super().__init__(
-            intents=discord.Intents(guilds=True),
+            intents=discord.Intents(guilds=True, voice_states=True),
             member_cache_flags=discord.MemberCacheFlags.none(),
             max_messages=None,
             chunk_guilds_at_startup=False,
@@ -43,6 +44,7 @@ class Bot(discord.Client):
         self.tree = app_commands.CommandTree(self)
         self.http_session: aiohttp.ClientSession | None = None
         self.service: MovieService | None = None
+        self.narrator = None  # voice.Narrator si la voz está activada
 
     async def setup_hook(self):
         self.http_session = aiohttp.ClientSession(
@@ -54,6 +56,13 @@ class Bot(discord.Client):
                                     os.getenv("OMDB_API_KEY", ""),
                                     filmaffinity=os.getenv("ENABLE_FILMAFFINITY") == "1")
         self.add_dynamic_items(RecButton)  # botones de recomendadas
+        if os.getenv("ENABLE_VOICE", "1") == "1":
+            try:
+                from voice import Narrator
+                self.narrator = Narrator(os.getenv("TTS_VOICE") or "es-MX-DaliaNeural",
+                                         os.getenv("FFMPEG_PATH") or "ffmpeg")
+            except ImportError as e:  # falta edge-tts o los extras de voz
+                log.warning("Voz desactivada: %s", e)
         if gid := os.getenv("DEV_GUILD_ID"):
             # En desarrollo: sincroniza al instante en un servidor concreto.
             guild = discord.Object(int(gid))
@@ -202,6 +211,30 @@ async def send_movie(inter: discord.Interaction, query: str):
     if view := recs_view(res):
         kwargs["view"] = view
     await inter.followup.send(**kwargs)
+    narrate(inter, res)
+
+
+def narrate(inter: discord.Interaction, res: Result) -> None:
+    """Si quien pidió la película está en un canal de voz, el bot la lee allí."""
+    voice = getattr(inter.user, "voice", None)  # solo Member (en servidores) tiene .voice
+    if not (bot.narrator and voice and voice.channel):
+        return
+    if not bot.narrator.can_speak(voice.channel):
+        log.info("Sin permiso de Conectar/Hablar en #%s", voice.channel)
+        return
+    from voice import narration_text
+    m = res.movie
+    task = asyncio.create_task(bot.narrator.speak(voice.channel, narration_text(m.title_lat, m.year, m.overview)))
+    _voice_tasks.add(task)  # referencia fuerte: si no, el GC podría cancelar la tarea
+
+    def done(t: asyncio.Task):
+        _voice_tasks.discard(t)
+        if not t.cancelled() and (err := t.exception()):
+            log.warning("Fallo leyendo «%s» en voz: %r", m.title_lat, err)
+    task.add_done_callback(done)
+
+
+_voice_tasks: set[asyncio.Task] = set()
 
 
 # ───────────────────────── comandos ─────────────────────────

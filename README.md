@@ -2,6 +2,8 @@
 
 `/pelicula titulo:<nombre>` devuelve la sinopsis en español, la portada, los títulos (LAT / España / inglés / original), una **valoración media** a partir de varias webs de crítica y de público, y **hasta 3 películas parecidas** con botones para ver su ficha.
 
+**Voz:** si quien usa el comando está en un canal de voz, el bot entra, lee el título y la sinopsis (voz neuronal en español latino vía `edge-tts`) y se va. Si varias personas piden a la vez, las lee por turnos. Se desactiva con `ENABLE_VOICE=0`.
+
 Acepta títulos en español latino («El origen»), de España («Origen») o en inglés («Inception»). El autocompletado muestra las coincidencias con su año para desambiguar remakes. También puedes escribir el año: `Origen 2010`.
 
 ## Fuentes
@@ -39,7 +41,7 @@ Coste: unas 30 peticiones pequeñas a TMDB por película nueva (en paralelo, ~1 
 
 ## Ligereza
 
-- Una sola dependencia: `discord.py` (incluye `aiohttp`). Sin BeautifulSoup, sin Selenium ni Playwright: todo son regex sobre el HTML.
+- Dependencias: `discord.py[voice]` (incluye `aiohttp`) y `edge-tts`, más FFmpeg en el sistema para la voz. Sin BeautifulSoup, sin Selenium ni Playwright: todo son regex sobre el HTML.
 - Solo el intent `guilds` y sin caché de miembros ni mensajes: el bot solo atiende slash commands.
 - Caché en memoria acotada: 200 fichas (12 h) y 500 búsquedas (30 min). Sin base de datos.
 - Las fuentes se consultan en paralelo con un timeout de 10 s cada una. Si dos usuarios piden la misma película a la vez, solo se scrapea una vez.
@@ -51,6 +53,7 @@ Coste: unas 30 peticiones pequeñas a TMDB por película nueva (en paralelo, ~1 
 sudo useradd -r -s /usr/sbin/nologin sinopsis
 sudo mkdir -p /opt/sinopsis-bot && sudo cp *.py requirements.txt .env.example sinopsis-bot.service /opt/sinopsis-bot/
 cd /opt/sinopsis-bot
+sudo apt install -y ffmpeg python3-venv   # no reinicia otros servicios
 sudo python3 -m venv .venv && sudo .venv/bin/pip install -r requirements.txt
 sudo cp .env.example .env && sudo nano .env      # rellena DISCORD_TOKEN y TMDB_API_KEY
 sudo chown -R sinopsis: /opt/sinopsis-bot && sudo chmod 600 .env
@@ -59,7 +62,7 @@ sudo systemctl daemon-reload && sudo systemctl enable --now sinopsis-bot
 journalctl -u sinopsis-bot -f
 ```
 
-**Invitar el bot:** en el Developer Portal → OAuth2 → URL Generator, marca los scopes `bot` y `applications.commands`. No hace falta ningún permiso extra ni ningún *privileged intent*.
+**Invitar el bot:** en el Developer Portal → OAuth2 → URL Generator, marca los scopes `bot` y `applications.commands`, y los permisos `Send Messages`, `Embed Links`, `Connect` y `Speak`. No hace falta ningún *privileged intent*.
 
 ## Límites conocidos
 
