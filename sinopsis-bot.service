@@ -1,0 +1,22 @@
+# /etc/systemd/system/sinopsis-bot.service
+[Unit]
+Description=Bot de Discord de sinopsis y valoraciones
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sinopsis
+WorkingDirectory=/opt/sinopsis-bot
+ExecStart=/opt/sinopsis-bot/.venv/bin/python -OO bot.py
+Restart=on-failure
+RestartSec=10
+# Techo de memoria: si algo se dispara, systemd lo reinicia en vez de ahogar el VPS
+MemoryMax=150M
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
