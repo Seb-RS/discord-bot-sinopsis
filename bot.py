@@ -164,6 +164,33 @@ def build_embed(res: Result) -> discord.Embed:
     return e
 
 
+class MovieModal(discord.ui.Modal):
+    """Formulario que abre un botón de recomendada: título y «leer en voz»
+    ya rellenos, para ajustarlos antes de enviar (Discord no deja a un bot
+    escribir un comando en la barra de mensajes del usuario)."""
+
+    def __init__(self, movie_id: int, label: str, read: bool):
+        super().__init__(title=f"🎬 {label}"[:45], timeout=600)
+        self.movie_id, self.label = movie_id, label
+        self.titulo = discord.ui.TextInput(default=label, max_length=100)
+        self.leer = discord.ui.Checkbox(default=read)
+        self.add_item(discord.ui.Label(
+            text="Título", description="Puedes cambiarlo o añadir el año", component=self.titulo))
+        self.add_item(discord.ui.Label(
+            text="Leer en voz", description="Si estás en un canal de voz, el bot entra a leer",
+            component=self.leer))
+
+    async def on_submit(self, inter: discord.Interaction):
+        if retry := cooldown_left(inter.user.id):
+            await inter.response.send_message(f"⏳ Espera {retry:.0f} s antes de volver a usarlo.",
+                                              ephemeral=True)
+            return
+        titulo = self.titulo.value.strip()
+        # Sin cambios → se usa el ID exacto; si lo editó, se busca lo que escribió.
+        query = f"tmdb:{self.movie_id}" if titulo == self.label else titulo
+        await send_movie(inter, query, self.leer.value)
+
+
 class RecButton(discord.ui.DynamicItem[discord.ui.Button], template=r"peli:(?P<id>\d+)(?::(?P<read>[01]))?"):
     """Botón de película recomendada. Es «dinámico»: el ID y si leer en voz van
     en el custom_id, así que sigue funcionando tras reiniciar el bot y no ocupa memoria."""
@@ -177,15 +204,11 @@ class RecButton(discord.ui.DynamicItem[discord.ui.Button], template=r"peli:(?P<i
     @classmethod
     async def from_custom_id(cls, inter, item, match):
         # Los botones antiguos no llevan «:0/1» → se leen (comportamiento anterior).
-        return cls(int(match["id"]), match["read"] != "0")
+        return cls(int(match["id"]), match["read"] != "0", item.label or "Ver")
 
     async def callback(self, inter: discord.Interaction):
-        # Mismo cooldown que el comando, para que los botones no sirvan para saltárselo.
-        if retry := cooldown_left(inter.user.id):
-            await inter.response.send_message(f"⏳ Espera {retry:.0f} s antes de volver a usarlo.",
-                                              ephemeral=True)
-            return
-        await send_movie(inter, f"tmdb:{self.movie_id}", self.read)
+        # Abre el formulario; el cooldown se comprueba al enviarlo, no al abrirlo.
+        await inter.response.send_modal(MovieModal(self.movie_id, self.item.label or "", self.read))
 
 
 def recs_view(res: Result, read: bool) -> discord.ui.View | None:
