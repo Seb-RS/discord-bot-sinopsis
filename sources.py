@@ -88,11 +88,19 @@ def best_match(movie: Movie, candidates: list[tuple[int | None, str, str]]) -> s
 
 
 async def fetch(http: aiohttp.ClientSession, url: str) -> tuple[str, str] | None:
-    async with http.get(url) as r:
-        if r.status != 200:
-            log.info("%s -> HTTP %s", url, r.status)
-            return None
-        return str(r.url), await r.text(errors="replace")
+    # Un reintento ante cortes de conexión a mitad de descarga (pasa con
+    # páginas grandes como las de Metacritic, ~700 KB).
+    for attempt in (1, 2):
+        try:
+            async with http.get(url) as r:
+                if r.status != 200:
+                    log.info("%s -> HTTP %s", url, r.status)
+                    return None
+                return str(r.url), await r.text(errors="replace")
+        except (aiohttp.ClientPayloadError, aiohttp.ClientConnectionError):
+            if attempt == 2:
+                raise
+            log.info("%s -> conexión cortada, reintentando", url)
 
 
 def int_or_none(x) -> int | None:

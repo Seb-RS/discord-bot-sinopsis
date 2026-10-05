@@ -1,6 +1,6 @@
 # Bot de sinopsis y valoraciones
 
-`/pelicula titulo:<nombre>` devuelve la sinopsis en español, la portada, los títulos (LAT / España / inglés / original) y una **valoración media** a partir de varias webs de crítica y de público.
+`/pelicula titulo:<nombre>` devuelve la sinopsis en español, la portada, los títulos (LAT / España / inglés / original), **dónde verla legalmente** en tu país (vía JustWatch/TMDB, configurable con `WATCH_REGION`) y una **valoración media** a partir de varias webs de crítica y de público.
 
 Acepta títulos en español latino («El origen»), de España («Origen») o en inglés («Inception»). El autocompletado muestra las coincidencias con su año para desambiguar remakes. También puedes escribir el año: `Origen 2010`.
 
@@ -27,7 +27,7 @@ Acepta títulos en español latino («El origen»), de España («Origen») o en
 ## Ligereza
 
 - Una sola dependencia: `discord.py` (incluye `aiohttp`). Sin BeautifulSoup, sin Selenium ni Playwright: todo son regex sobre el HTML.
-- Sin intents ni cachés de Discord: el bot solo atiende slash commands.
+- Solo el intent `guilds` y sin caché de miembros ni mensajes: el bot solo atiende slash commands.
 - Caché en memoria acotada: 200 fichas (12 h) y 500 búsquedas (30 min). Sin base de datos.
 - Las fuentes se consultan en paralelo con un timeout de 10 s cada una. Si dos usuarios piden la misma película a la vez, solo se scrapea una vez.
 - Cooldown de 8 s por usuario.

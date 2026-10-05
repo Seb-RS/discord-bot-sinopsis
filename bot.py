@@ -31,10 +31,10 @@ def load_env(path: Path = Path(__file__).with_name(".env")) -> None:
 
 class Bot(discord.Client):
     def __init__(self):
-        # Sin intents ni cachés: el bot solo responde a slash commands
-        # (interacciones), así que no necesita miembros, mensajes ni presencias.
+        # Solo el intent `guilds` (lo exige discord.py para funcionar bien):
+        # el bot responde a slash commands, no necesita miembros, mensajes ni presencias.
         super().__init__(
-            intents=discord.Intents.none(),
+            intents=discord.Intents(guilds=True),
             member_cache_flags=discord.MemberCacheFlags.none(),
             max_messages=None,
             chunk_guilds_at_startup=False,
@@ -51,7 +51,8 @@ class Bot(discord.Client):
         )
         self.service = MovieService(self.http_session, os.environ["TMDB_API_KEY"],
                                     os.getenv("OMDB_API_KEY", ""),
-                                    filmaffinity=os.getenv("ENABLE_FILMAFFINITY") == "1")
+                                    filmaffinity=os.getenv("ENABLE_FILMAFFINITY") == "1",
+                                    region=os.getenv("WATCH_REGION") or "AR")
         if gid := os.getenv("DEV_GUILD_ID"):
             # En desarrollo: sincroniza al instante en un servidor concreto.
             guild = discord.Object(int(gid))
@@ -141,8 +142,20 @@ def build_embed(res: Result) -> discord.Embed:
     else:
         e.add_field(name="Fuentes", value="No se pudo obtener ninguna valoración.", inline=False)
 
+    region = bot.service.tmdb.region
+    watch = []
+    if m.stream:
+        watch.append("**Suscripción:** " + ", ".join(m.stream[:6]))
+    if m.rent_buy:
+        watch.append("**Alquiler/compra:** " + ", ".join(m.rent_buy[:6]))
+    if m.watch_link and watch:
+        watch.append(f"[Ver todas las opciones]({m.watch_link})")
+    e.add_field(name=f"📺 Dónde verla ({region})",
+                value="\n".join(watch) or "No está en plataformas de streaming en tu región.",
+                inline=False)
+
     e.set_footer(text="Notas normalizadas a 0–100 · Crítica y público pesan 50/50 · "
-                      "Datos y portada: TMDB")
+                      "Datos y portada: TMDB · Plataformas: JustWatch")
     return e
 
 
@@ -202,7 +215,15 @@ def main():
     load_env()
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"),
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    bot.run(os.environ["DISCORD_TOKEN"], log_handler=None)
+    token = os.getenv("DISCORD_TOKEN", "").strip()
+    if token.count(".") != 2:
+        raise SystemExit(
+            "DISCORD_TOKEN no tiene formato de token de bot (debe ser xxxx.yyyy.zzzz).\n"
+            "Ojo: la «Public Key» y el «Client Secret» NO sirven. Sácalo en "
+            "Developer Portal → tu app → Bot → Reset Token.")
+    if not os.getenv("TMDB_API_KEY"):
+        raise SystemExit("Falta TMDB_API_KEY en el .env.")
+    bot.run(token, log_handler=None)
 
 
 if __name__ == "__main__":
