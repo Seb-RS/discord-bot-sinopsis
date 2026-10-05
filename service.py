@@ -113,6 +113,8 @@ class MovieService:
         }
         if self.use_filmaffinity:
             jobs["fa"] = sources.filmaffinity(self.http, movie)
+        # Las recomendaciones se calculan en paralelo con el scraping.
+        jobs["recs"] = self.tmdb.recommend(movie)
         done = await asyncio.gather(
             *(asyncio.wait_for(j, SOURCE_TIMEOUT) for j in jobs.values()), return_exceptions=True)
 
@@ -120,6 +122,9 @@ class MovieService:
         for name, res in zip(jobs, done):
             if isinstance(res, BaseException):
                 log.warning("%s falló para %s: %r", name, movie.title_en, res)
+                continue
+            if name == "recs":
+                movie.recommendations = res
                 continue
             for r in res:
                 ratings.setdefault(r.source, r)   # el scraping directo tiene prioridad sobre OMDb

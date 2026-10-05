@@ -1,6 +1,6 @@
 # Bot de sinopsis y valoraciones
 
-`/pelicula titulo:<nombre>` devuelve la sinopsis en español, la portada, los títulos (LAT / España / inglés / original), **dónde verla legalmente** en tu país (vía JustWatch/TMDB, configurable con `WATCH_REGION`) y una **valoración media** a partir de varias webs de crítica y de público.
+`/pelicula titulo:<nombre>` devuelve la sinopsis en español, la portada, los títulos (LAT / España / inglés / original), **dónde verla legalmente** en tu país (vía JustWatch/TMDB, configurable con `WATCH_REGION`) la **clasificación por edad**, una **valoración media** a partir de varias webs de crítica y de público, y **hasta 3 películas parecidas** con botones para ver su ficha.
 
 Acepta títulos en español latino («El origen»), de España («Origen») o en inglés («Inception»). El autocompletado muestra las coincidencias con su año para desambiguar remakes. También puedes escribir el año: `Origen 2010`.
 
@@ -23,6 +23,16 @@ Acepta títulos en español latino («El origen»), de España («Origen») o en
 3. **Muestra mínima**: si una fuente tiene muy pocos votos o reseñas, se muestra tachada y no cuenta en la media (umbrales en `MIN_COUNT`, en `sources.py`).
 4. **Crítica y público se promedian por separado** y la nota global es la media de ambas (50/50). Así el resultado no se inclina hacia el público solo porque haya más webs de público.
 5. **No se adivina**: una ficha scrapeada solo se acepta si el año coincide (±1) y, cuando hay ambigüedad, también el título. Si no hay coincidencia fiable, la fuente se omite.
+
+## Recomendaciones
+
+Las recomendaciones de TMDB tal cual mezclan mal parecido y popularidad (p. ej. *Avengers: Endgame* para *Interstellar*), así que se recalculan:
+
+1. **Candidatas**: recomendaciones de TMDB + películas de la misma saga + películas que comparten palabras clave temáticas, con ≥ 500 votos y algún género en común.
+2. **Puntuación**: (4 × similitud de palabras clave + similitud de géneros) × nota bayesiana (con pocos votos la nota tiende a 6,5).
+3. **Reglas**: se exige al menos una palabra clave en común, y entra como mucho una película de la misma saga.
+
+Funciona bien en la mayoría de casos (*El Padrino* → *El Padrino II*, *Buenos Muchachos*; *Coco* → *Up*, *Buscando a Nemo*), pero falla cuando las palabras clave de TMDB son genéricas (*El origen* → películas de Marvel). Las fuentes con mejores datos de «quien vio esto también vio» (Letterboxd, IMDb) bloquean el scraping.
 
 ## Ligereza
 

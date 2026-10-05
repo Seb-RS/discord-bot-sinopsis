@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from pathlib import Path
 
 import aiohttp
@@ -53,6 +54,7 @@ class Bot(discord.Client):
                                     os.getenv("OMDB_API_KEY", ""),
                                     filmaffinity=os.getenv("ENABLE_FILMAFFINITY") == "1",
                                     region=os.getenv("WATCH_REGION") or "AR")
+        self.add_dynamic_items(RecButton)  # botones de recomendadas
         if gid := os.getenv("DEV_GUILD_ID"):
             # En desarrollo: sincroniza al instante en un servidor concreto.
             guild = discord.Object(int(gid))
@@ -117,6 +119,8 @@ def build_embed(res: Result) -> discord.Embed:
         info.append(", ".join(m.genres[:3]))
     if m.runtime:
         info.append(f"{m.runtime // 60} h {m.runtime % 60:02d} min")
+    if m.certification:
+        info.append(f"Clasificación: **{m.certification}**")
     if info:
         e.add_field(name="Ficha", value="\n".join(info), inline=True)
 
@@ -154,28 +158,92 @@ def build_embed(res: Result) -> discord.Embed:
                 value="\n".join(watch) or "No está en plataformas de streaming en tu región.",
                 inline=False)
 
+    if m.recommendations:
+        recs = [f"**{r['title']}**" + (f" ({r['year']})" if r["year"] else "")
+                + f" · ⭐ {r['vote']:.1f}/10 en TMDB" for r in m.recommendations]
+        e.add_field(name="🎯 Si te gustó, prueba con", value="\n".join(recs), inline=False)
+
     e.set_footer(text="Notas normalizadas a 0–100 · Crítica y público pesan 50/50 · "
                       "Datos y portada: TMDB · Plataformas: JustWatch")
     return e
 
 
-# ───────────────────────── comandos ─────────────────────────
+class RecButton(discord.ui.DynamicItem[discord.ui.Button], template=r"peli:(?P<id>\d+)"):
+    """Botón de película recomendada. Es «dinámico»: el ID va en el custom_id,
+    así que sigue funcionando tras reiniciar el bot y no ocupa memoria."""
 
-@bot.tree.command(name="pelicula", description="Sinopsis, portada y valoración media de una película")
-@app_commands.describe(titulo="Título en español (LAT o España) o inglés. Puedes añadir el año: «Origen 2010»")
-@app_commands.checks.cooldown(1, 8.0, key=lambda i: i.user.id)
-async def pelicula(inter: discord.Interaction, titulo: app_commands.Range[str, 1, 100]):
+    def __init__(self, movie_id: int, label: str = "Ver"):
+        super().__init__(discord.ui.Button(
+            label=label, emoji="🎬", style=discord.ButtonStyle.secondary, custom_id=f"peli:{movie_id}"))
+        self.movie_id = movie_id
+
+    @classmethod
+    async def from_custom_id(cls, inter, item, match):
+        return cls(int(match["id"]))
+
+    async def callback(self, inter: discord.Interaction):
+        # Mismo cooldown que el comando, para que los botones no sirvan para saltárselo.
+        if retry := cooldown_left(inter.user.id):
+            await inter.response.send_message(f"⏳ Espera {retry:.0f} s antes de volver a usarlo.",
+                                              ephemeral=True)
+            return
+        await send_movie(inter, f"tmdb:{self.movie_id}")
+
+
+def recs_view(res: Result) -> discord.ui.View | None:
+    if not res.movie.recommendations:
+        return None
+    view = discord.ui.View(timeout=1)  # sin estado: los clics los atiende RecButton
+    for r in res.movie.recommendations:
+        label = f"{r['title']} ({r['year']})" if r["year"] else r["title"]
+        view.add_item(RecButton(r["id"], label[:80]))
+    return view
+
+
+async def send_movie(inter: discord.Interaction, query: str):
     await inter.response.defer(thinking=True)
     try:
-        res = await bot.service.lookup(titulo)
+        res = await bot.service.lookup(query)
     except Exception:
-        log.exception("Error buscando %r", titulo)
+        log.exception("Error buscando %r", query)
         await inter.followup.send("⚠️ Error consultando los datos. Prueba de nuevo en un rato.")
         return
     if not res:
-        await inter.followup.send(f"🔍 No encontré ninguna película para **{titulo}**.")
+        await inter.followup.send(f"🔍 No encontré ninguna película para **{query}**.")
         return
-    await inter.followup.send(embed=build_embed(res))
+    kwargs = {"embed": build_embed(res)}
+    if view := recs_view(res):
+        kwargs["view"] = view
+    await inter.followup.send(**kwargs)
+
+
+# ───────────────────────── comandos ─────────────────────────
+
+COOLDOWN = 8.0
+_last_use: dict[int, float] = {}
+
+
+def cooldown_left(user_id: int) -> float:
+    """Segundos que le faltan al usuario (0 si puede usarlo). Compartido por el
+    comando y los botones."""
+    now = time.monotonic()
+    if (left := _last_use.get(user_id, 0) + COOLDOWN - now) > 0:
+        return left
+    _last_use[user_id] = now
+    if len(_last_use) > 1000:  # limpieza para que el dict no crezca sin fin
+        for uid in [u for u, t in _last_use.items() if now - t > COOLDOWN]:
+            del _last_use[uid]
+    return 0
+
+
+@bot.tree.command(name="pelicula", description="Sinopsis, portada y valoración media de una película")
+@app_commands.describe(titulo="Título en español (LAT o España) o inglés. Puedes añadir el año: «Origen 2010»")
+async def pelicula(inter: discord.Interaction, titulo: app_commands.Range[str, 1, 100]):
+    if retry := cooldown_left(inter.user.id):
+        await inter.response.send_message(f"⏳ Espera {retry:.0f} s antes de volver a usarlo.",
+                                          ephemeral=True)
+        return
+    await send_movie(inter, titulo)
 
 
 @pelicula.autocomplete("titulo")
@@ -200,11 +268,8 @@ async def titulo_autocomplete(inter: discord.Interaction, current: str):
 
 @bot.tree.error
 async def on_app_error(inter: discord.Interaction, error: app_commands.AppCommandError):
-    if isinstance(error, app_commands.CommandOnCooldown):
-        msg = f"⏳ Espera {error.retry_after:.0f} s antes de volver a usarlo."
-    else:
-        log.exception("Error en comando", exc_info=error)
-        msg = "⚠️ Algo salió mal."
+    log.exception("Error en comando", exc_info=error)
+    msg = "⚠️ Algo salió mal."
     if inter.response.is_done():
         await inter.followup.send(msg, ephemeral=True)
     else:
