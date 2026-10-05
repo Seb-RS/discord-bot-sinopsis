@@ -26,13 +26,16 @@ Acepta títulos en español latino («El origen»), de España («Origen») o en
 
 ## Recomendaciones
 
-Las recomendaciones de TMDB tal cual mezclan mal parecido y popularidad (p. ej. *Avengers: Endgame* para *Interstellar*), así que se recalculan:
+Las recomendaciones de TMDB tal cual mezclan mal parecido y popularidad (p. ej. *Avengers: Endgame* para *Interstellar*), así que se calculan por **temática**, con TF-IDF sobre las palabras clave de TMDB:
 
-1. **Candidatas**: recomendaciones de TMDB + películas de la misma saga + películas que comparten palabras clave temáticas, con ≥ 500 votos y algún género en común.
-2. **Puntuación**: (4 × similitud de palabras clave + similitud de géneros) × nota bayesiana (con pocos votos la nota tiende a 6,5).
-3. **Reglas**: se exige al menos una palabra clave en común, y entra como mucho una película de la misma saga.
+1. Por cada palabra clave de la película se piden las películas más votadas que la tienen. El total de resultados indica lo rara que es: *agujero de gusano* (10 películas) pesa mucho más que *distopía* (267).
+2. **Puntuación** = Σ IDF de las palabras clave compartidas × (0,5 + similitud de géneros) × nota bayesiana / 7.
+3. **Reglas**: al menos un género en común, ≥ 300 votos y como mucho una película por saga.
+4. Cada recomendación muestra los 3 temas en común más específicos, para que se vea **por qué** sale.
 
-Funciona bien en la mayoría de casos (*El Padrino* → *El Padrino II*, *Buenos Muchachos*; *Coco* → *Up*, *Buscando a Nemo*), pero falla cuando las palabras clave de TMDB son genéricas (*El origen* → películas de Marvel). Las fuentes con mejores datos de «quien vio esto también vio» (Letterboxd, IMDb) bloquean el scraping.
+Ejemplos: *Interstellar* → *Pasajeros*, *Misión Rescate*, *2001*; *El Padrino* → *El Padrino II*, *El irlandés*, *Caracortada*; *Relatos salvajes* → *Un día de furia*, *Tiempos violentos*. Falla cuando las palabras clave de TMDB son pobres (*El origen* → *Matrix recargado*, *Misión Imposible 5*). Las palabras clave de TMDB solo existen en inglés.
+
+Coste: unas 30 peticiones pequeñas a TMDB por película nueva (en paralelo, ~1 s), que se cachean 12 h.
 
 ## Ligereza
 

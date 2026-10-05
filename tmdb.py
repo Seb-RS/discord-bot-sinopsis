@@ -4,12 +4,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import asyncio
+import math
+from collections import defaultdict
 
 import aiohttp
 
 API = "https://api.themoviedb.org/3"
 IMG = "https://image.tmdb.org/t/p/w500"
-MIN_VOTES = 500  # una recomendación con menos votos es una apuesta, no una recomendación
+MIN_VOTES = 300      # una recomendación con menos votos es una apuesta, no una recomendación
+MAX_KEYWORDS = 30    # nº máximo de palabras clave consultadas (1 petición pequeña cada una)
+CORPUS = 20_000      # orden de magnitud de películas con ≥ MIN_VOTES votos en TMDB (para el IDF)
 
 
 @dataclass(slots=True)
@@ -35,8 +39,7 @@ class Movie:
     recommendations: list[dict] = field(default_factory=list)
     # Semilla para calcular recomendaciones (no se muestra)
     _genre_ids: set[int] = field(default_factory=set, repr=False)
-    _keyword_ids: list[int] = field(default_factory=list, repr=False)
-    _tmdb_recs: list[dict] = field(default_factory=list, repr=False)
+    _keywords: dict[int, str] = field(default_factory=dict, repr=False)  # id → nombre
     _collection_id: int | None = field(default=None, repr=False)
 
     @property
@@ -72,7 +75,7 @@ class TMDB:
     async def movie(self, movie_id: int) -> Movie:
         d = await self._get(
             f"/movie/{movie_id}", language="es-MX",
-            append_to_response="translations,external_ids,watch/providers,release_dates,recommendations,keywords",
+            append_to_response="translations,external_ids,watch/providers,release_dates,keywords",
         )
         wp = d.get("watch/providers", {}).get("results", {}).get(self.region, {})
 
@@ -112,8 +115,7 @@ class TMDB:
             rent_buy=providers("rent", "buy"),
             certification=self._certification(d),
             _genre_ids={g["id"] for g in d.get("genres", [])},
-            _keyword_ids=[k["id"] for k in d.get("keywords", {}).get("keywords", [])],
-            _tmdb_recs=d.get("recommendations", {}).get("results", []),
+            _keywords={k["id"]: k["name"] for k in d.get("keywords", {}).get("keywords", [])},
             _collection_id=(d.get("belongs_to_collection") or {}).get("id"),
         )
 
@@ -129,66 +131,85 @@ class TMDB:
         return None
 
     async def recommend(self, movie: Movie, n: int = 3) -> list[dict]:
-        """Hasta `n` películas parecidas.
+        """Hasta `n` películas parecidas por TEMÁTICA, no por popularidad.
 
-        Las recomendaciones crudas de TMDB mezclan mal parecido y popularidad
-        (p. ej. «Avengers: Endgame» para «Interstellar»), así que:
-        1. Candidatas = recomendaciones de TMDB + películas de la misma saga +
-           películas que comparten palabras clave temáticas (discover), con
-           ≥ MIN_VOTES votos y algún género en común.
-        2. Se piden las palabras clave de las mejores candidatas y se puntúa:
-           (4·similitud de palabras clave + similitud de géneros) × nota bayesiana.
-        3. Se exige ≥ 1 palabra clave en común (si no, solo entra de relleno) y
-           como mucho 1 película de la misma saga, para no recomendar solo secuelas.
+        Las recomendaciones de TMDB tal cual mezclan mal parecido y popularidad
+        (p. ej. «Avengers: Endgame» para «Interstellar»). Aquí se usa TF-IDF
+        sobre las palabras clave de TMDB:
+        1. Por cada palabra clave de la película se piden las películas más
+           votadas que la tienen. `total_results` dice lo rara que es:
+           «agujero de gusano» (10 películas) pesa mucho más que «distopía» (267).
+        2. Puntuación de cada candidata = Σ IDF de las palabras clave que comparte
+           × (0,5 + similitud de géneros) × nota bayesiana / 7.
+        3. Se exige algún género en común y entra como mucho 1 película de la saga.
         """
-        kw0, g0 = set(movie._keyword_ids), movie._genre_ids
-        reqs = []
-        if kw0:
-            with_kw = "|".join(map(str, movie._keyword_ids[:20]))
-            reqs += [self._get("/discover/movie", language="es-MX", with_keywords=with_kw,
-                               sort_by="vote_count.desc", page=p, **{"vote_count.gte": MIN_VOTES})
-                     for p in (1, 2)]
+        kws = list(movie._keywords.items())[:MAX_KEYWORDS]
+        if not kws:
+            return []
+        g0 = movie._genre_ids
+        reqs = [self._get("/discover/movie", language="es-MX", with_keywords=kid,
+                          sort_by="vote_count.desc", **{"vote_count.gte": MIN_VOTES})
+                for kid, _ in kws]
         if movie._collection_id:
-            reqs.append(self._get(f"/collection/{movie._collection_id}", language="es-MX"))
+            reqs.append(self._get(f"/collection/{movie._collection_id}"))
         pages = await asyncio.gather(*reqs, return_exceptions=True)
-        saga = {r["id"] for pg in pages if isinstance(pg, dict) for r in pg.get("parts", [])}
-        pool: dict[int, dict] = {}
-        for r in movie._tmdb_recs + [x for pg in pages if isinstance(pg, dict)
-                                     for x in pg.get("results", []) + pg.get("parts", [])]:
-            if (r["id"] != movie.tmdb_id and not r.get("adult")
-                    and (r.get("vote_count") or 0) >= MIN_VOTES and g0 & set(r.get("genre_ids", []))):
-                pool.setdefault(r["id"], r)
+        saga = set()
+        if movie._collection_id and isinstance(pages[-1], dict):
+            saga = {p["id"] for p in pages.pop().get("parts", [])}
 
-        def jaccard(a: set, b: set) -> float:
-            return len(a & b) / len(a | b) if a | b else 0.0
+        idf_sum: dict[int, float] = defaultdict(float)
+        shared: dict[int, list[tuple[float, str]]] = defaultdict(list)
+        info: dict[int, dict] = {}
+        for (_, name), page in zip(kws, pages):
+            if not isinstance(page, dict):
+                continue
+            idf = math.log(CORPUS / max(page.get("total_results") or 1, 1))
+            for r in page.get("results", []):
+                if r["id"] == movie.tmdb_id or r.get("adult"):
+                    continue
+                idf_sum[r["id"]] += idf
+                shared[r["id"]].append((idf, name))
+                info[r["id"]] = r
 
         def quality(r: dict) -> float:
             # Media bayesiana: con pocos votos la nota tiende a 6,5.
             v, c = r.get("vote_average") or 0, r.get("vote_count") or 0
             return (v * c + 6.5 * 1000) / (c + 1000)
 
-        # La saga siempre entra a puntuarse; el resto, las 15 mejores por calidad × géneros.
-        rest = sorted((r for r in pool.values() if r["id"] not in saga),
-                      key=lambda r: -quality(r) * jaccard(g0, set(r["genre_ids"])))
-        top = [r for r in pool.values() if r["id"] in saga] + rest[:15]
-        kws = await asyncio.gather(*(self._get(f"/movie/{r['id']}/keywords") for r in top),
-                                   return_exceptions=True)
         scored = []
-        for r, k in zip(top, kws):
-            kw = {x["id"] for x in k.get("keywords", [])} if isinstance(k, dict) else set()
-            score = (4 * jaccard(kw0, kw) + jaccard(g0, set(r["genre_ids"]))) * quality(r)
-            scored.append((bool(kw0 & kw), score, r))
-        # Primero las que comparten temática; dentro de cada grupo, por puntuación.
-        scored.sort(key=lambda x: (not x[0], -x[1]))
-        out, saga_used = [], False
-        for _, _, r in scored:
+        for mid, s in idf_sum.items():
+            r, g = info[mid], set(info[mid].get("genre_ids", []))
+            if not g0 & g:
+                continue
+            scored.append((s * (0.5 + len(g0 & g) / len(g0 | g)) * quality(r) / 7, r))
+        scored.sort(key=lambda x: -x[0])
+
+        out, saga_used, franchises = [], False, set()
+        for _, r in scored:
             if r["id"] in saga:
                 if saga_used:
                     continue
                 saga_used = True
+            # Tampoco dos de otra misma saga («Matrix 2» y «Matrix 3»). Las
+            # candidatas no traen su colección, así que se aproxima con la
+            # primera palabra significativa del título original.
+            if (fr := _franchise(r.get("original_title") or r.get("title") or "")) in franchises:
+                continue
+            franchises.add(fr)
+            # Los 3 temas compartidos más específicos, para explicar el porqué.
+            themes = [name for _, name in sorted(shared[r["id"]], reverse=True)[:3]]
             out.append({"id": r["id"], "title": r.get("title") or r.get("original_title"),
                         "year": (r.get("release_date") or "")[:4] or None,
-                        "vote": r.get("vote_average") or 0.0})
+                        "vote": r.get("vote_average") or 0.0, "themes": themes})
             if len(out) == n:
                 break
         return out
+
+
+_ARTICLES = {"the", "a", "an", "el", "la", "los", "las", "un", "una", "le", "les", "der", "die", "das"}
+
+
+def _franchise(title: str) -> str:
+    words = [w for w in "".join(c if c.isalnum() else " " for c in title.lower()).split()
+             if w not in _ARTICLES]
+    return words[0] if words else title

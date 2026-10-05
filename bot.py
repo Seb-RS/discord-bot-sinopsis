@@ -160,7 +160,9 @@ def build_embed(res: Result) -> discord.Embed:
 
     if m.recommendations:
         recs = [f"**{r['title']}**" + (f" ({r['year']})" if r["year"] else "")
-                + f" · ⭐ {r['vote']:.1f}/10 en TMDB" for r in m.recommendations]
+                + f" · ⭐ {r['vote']:.1f}"
+                + (f"\n-# En común: {', '.join(r['themes'])}" if r.get("themes") else "")
+                for r in m.recommendations]
         e.add_field(name="🎯 Si te gustó, prueba con", value="\n".join(recs), inline=False)
 
     e.set_footer(text="Notas normalizadas a 0–100 · Crítica y público pesan 50/50 · "
