@@ -1,6 +1,6 @@
 # Bot de sinopsis y valoraciones
 
-`/pelicula titulo:<nombre>` devuelve la sinopsis en español, la portada, los títulos (LAT / España / inglés / original), **dónde verla legalmente** en tu país (vía JustWatch/TMDB, configurable con `WATCH_REGION`) la **clasificación por edad**, una **valoración media** a partir de varias webs de crítica y de público, y **hasta 3 películas parecidas** con botones para ver su ficha.
+`/pelicula titulo:<nombre>` devuelve la sinopsis en español, la portada, los títulos (LAT / España / inglés / original), una **valoración media** a partir de varias webs de crítica y de público, y **hasta 3 películas parecidas** con botones para ver su ficha.
 
 Acepta títulos en español latino («El origen»), de España («Origen») o en inglés («Inception»). El autocompletado muestra las coincidencias con su año para desambiguar remakes. También puedes escribir el año: `Origen 2010`.
 

@@ -52,8 +52,7 @@ class Bot(discord.Client):
         )
         self.service = MovieService(self.http_session, os.environ["TMDB_API_KEY"],
                                     os.getenv("OMDB_API_KEY", ""),
-                                    filmaffinity=os.getenv("ENABLE_FILMAFFINITY") == "1",
-                                    region=os.getenv("WATCH_REGION") or "AR")
+                                    filmaffinity=os.getenv("ENABLE_FILMAFFINITY") == "1")
         self.add_dynamic_items(RecButton)  # botones de recomendadas
         if gid := os.getenv("DEV_GUILD_ID"):
             # En desarrollo: sincroniza al instante en un servidor concreto.
@@ -119,8 +118,6 @@ def build_embed(res: Result) -> discord.Embed:
         info.append(", ".join(m.genres[:3]))
     if m.runtime:
         info.append(f"{m.runtime // 60} h {m.runtime % 60:02d} min")
-    if m.certification:
-        info.append(f"Clasificación: **{m.certification}**")
     if info:
         e.add_field(name="Ficha", value="\n".join(info), inline=True)
 
@@ -146,18 +143,6 @@ def build_embed(res: Result) -> discord.Embed:
     else:
         e.add_field(name="Fuentes", value="No se pudo obtener ninguna valoración.", inline=False)
 
-    region = bot.service.tmdb.region
-    watch = []
-    if m.stream:
-        watch.append("**Suscripción:** " + ", ".join(m.stream[:6]))
-    if m.rent_buy:
-        watch.append("**Alquiler/compra:** " + ", ".join(m.rent_buy[:6]))
-    if m.watch_link and watch:
-        watch.append(f"[Ver todas las opciones]({m.watch_link})")
-    e.add_field(name=f"📺 Dónde verla ({region})",
-                value="\n".join(watch) or "No está en plataformas de streaming en tu región.",
-                inline=False)
-
     if m.recommendations:
         recs = [f"**{r['title']}**" + (f" ({r['year']})" if r["year"] else "")
                 + f" · ⭐ {r['vote']:.1f}"
@@ -166,7 +151,7 @@ def build_embed(res: Result) -> discord.Embed:
         e.add_field(name="🎯 Si te gustó, prueba con", value="\n".join(recs), inline=False)
 
     e.set_footer(text="Notas normalizadas a 0–100 · Crítica y público pesan 50/50 · "
-                      "Datos y portada: TMDB · Plataformas: JustWatch")
+                      "Datos y portada: TMDB")
     return e
 
 

@@ -31,11 +31,6 @@ class Movie:
     genres: list[str] = field(default_factory=list)
     vote_average: float = 0.0
     vote_count: int = 0
-    # Plataformas legales en la región configurada (datos de JustWatch vía TMDB)
-    watch_link: str | None = None
-    stream: list[str] = field(default_factory=list)   # suscripción / gratis
-    rent_buy: list[str] = field(default_factory=list)  # alquiler o compra
-    certification: str | None = None                   # clasificación por edad, p. ej. "+13 (AR)"
     recommendations: list[dict] = field(default_factory=list)
     # Semilla para calcular recomendaciones (no se muestra)
     _genre_ids: set[int] = field(default_factory=set, repr=False)
@@ -51,8 +46,8 @@ class Movie:
 
 
 class TMDB:
-    def __init__(self, http: aiohttp.ClientSession, key: str, region: str = "AR"):
-        self.http, self.region = http, region.upper()
+    def __init__(self, http: aiohttp.ClientSession, key: str):
+        self.http = http
         # Acepta tanto la API key v3 como el "Read Access Token" v4 (JWT).
         if key.startswith("eyJ"):
             self.headers, self.auth = {"Authorization": f"Bearer {key}"}, {}
@@ -75,13 +70,8 @@ class TMDB:
     async def movie(self, movie_id: int) -> Movie:
         d = await self._get(
             f"/movie/{movie_id}", language="es-MX",
-            append_to_response="translations,external_ids,watch/providers,release_dates,keywords",
+            append_to_response="translations,external_ids,keywords",
         )
-        wp = d.get("watch/providers", {}).get("results", {}).get(self.region, {})
-
-        def providers(*kinds: str) -> list[str]:
-            names = [p["provider_name"] for k in kinds for p in wp.get(k, [])]
-            return list(dict.fromkeys(names))  # sin duplicados, en orden
         tr = {
             f"{t['iso_639_1']}-{t['iso_3166_1']}": t.get("data", {})
             for t in d.get("translations", {}).get("translations", [])
@@ -110,25 +100,10 @@ class TMDB:
             genres=[g["name"] for g in d.get("genres", [])],
             vote_average=d.get("vote_average") or 0.0,
             vote_count=d.get("vote_count") or 0,
-            watch_link=wp.get("link"),
-            stream=providers("flatrate", "free", "ads"),
-            rent_buy=providers("rent", "buy"),
-            certification=self._certification(d),
             _genre_ids={g["id"] for g in d.get("genres", [])},
             _keywords={k["id"]: k["name"] for k in d.get("keywords", {}).get("keywords", [])},
             _collection_id=(d.get("belongs_to_collection") or {}).get("id"),
         )
-
-    def _certification(self, d: dict) -> str | None:
-        by_country = {r["iso_3166_1"]: r.get("release_dates", [])
-                      for r in d.get("release_dates", {}).get("results", [])}
-        for country in dict.fromkeys((self.region, "US")):
-            # El estreno en cines (tipo 3) primero; si no, cualquiera con clasificación.
-            dates = sorted(by_country.get(country, []), key=lambda x: x.get("type") != 3)
-            for rd in dates:
-                if cert := (rd.get("certification") or "").strip():
-                    return f"{cert} ({country})"
-        return None
 
     async def recommend(self, movie: Movie, n: int = 3) -> list[dict]:
         """Hasta `n` películas parecidas por TEMÁTICA, no por popularidad.

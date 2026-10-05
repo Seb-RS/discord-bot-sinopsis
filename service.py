@@ -68,8 +68,8 @@ YEAR_RE = re.compile(r"^(.*?)[\s(\[]+((?:18|19|20)\d{2})[)\]]?\s*$")
 
 class MovieService:
     def __init__(self, http: aiohttp.ClientSession, tmdb_key: str, omdb_key: str = "",
-                 filmaffinity: bool = False, region: str = "AR"):
-        self.http, self.tmdb, self.omdb_key = http, TMDB(http, tmdb_key, region), omdb_key
+                 filmaffinity: bool = False):
+        self.http, self.tmdb, self.omdb_key = http, TMDB(http, tmdb_key), omdb_key
         self.use_filmaffinity = filmaffinity
         self.results = TTLCache(ttl=12 * 3600, maxsize=200)
         self.searches = TTLCache(ttl=30 * 60, maxsize=500)
